@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "author": "Anonymous",
+  "editor": "wokwi",
+  "parts": [
+    { "id": "esp32", "type": "board-esp32-s3-devkitc-1", "top": 0, "left": 0, "attrs": {} },
+    { "id": "pot", "type": "wokwi-potentiometer", "top": -120, "left": -120, "attrs": {} },
+    { "id": "led", "type": "wokwi-led", "top": -120, "left": 120, "attrs": { "color": "red" } }
+  ],
+  "connections": [
+    [ "esp32:GND.1", "pot:GND", "black", [ "v0" ] ],
+    [ "esp32:3V3.1", "pot:VCC", "red", [ "v0" ] ],
+    [ "esp32:4", "pot:SIG", "blue", [ "v0" ] ],
+    
+    [ "esp32:GND.2", "led:C", "black", [ "v0" ] ],
+    [ "esp32:2", "led:A", "green", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}
