@@ -1,19 +1,26 @@
 {
   "version": 1,
-  "author": "Anonymous",
+  "author": "ivesklein",
   "editor": "wokwi",
   "parts": [
-    { "id": "esp32", "type": "board-esp32-s3-devkitc-1", "top": 0, "left": 0, "attrs": {} },
-    { "id": "pot", "type": "wokwi-potentiometer", "top": -120, "left": -120, "attrs": {} },
-    { "id": "led", "type": "wokwi-led", "top": -120, "left": 120, "attrs": { "color": "red" } }
+    { "type": "board-esp32-s3-devkitc-1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-potentiometer", "id": "pot1", "top": 130.0, "left": -170.0, "attrs": {} },
+    { "type": "wokwi-servo", "id": "servo1", "top": 50.0, "left": 160.0, "attrs": {} },
+    { "type": "wokwi-led", "id": "led1", "top": 30.34, "left": -97.5, "attrs": { "color": "red" } },
+    { "type": "wokwi-resistor", "id": "r1", "top": 53.73, "left": -58.24, "attrs": { "value": "220" } }
   ],
   "connections": [
-    [ "esp32:GND.1", "pot:GND", "black", [ "v0" ] ],
-    [ "esp32:3V3.1", "pot:VCC", "red", [ "v0" ] ],
-    [ "esp32:4", "pot:SIG", "blue", [ "v0" ] ],
-    
-    [ "esp32:GND.2", "led:C", "black", [ "v0" ] ],
-    [ "esp32:2", "led:A", "green", [ "v0" ] ]
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "pot1:VCC", "esp:3V3", "red", [ "h0" ] ],
+    [ "pot1:GND", "esp:GND.1", "black", [ "h0" ] ],
+    [ "pot1:SIG", "esp:4", "green", [ "v0" ] ],
+    [ "servo1:V+", "esp:5V", "red", [ "h0" ] ],
+    [ "servo1:GND", "esp:GND.1", "black", [ "h0" ] ],
+    [ "servo1:PWM", "esp:18", "blue", [ "v0" ] ],
+    [ "led1:C", "esp:GND.2", "black", [ "v0" ] ],
+    [ "led1:A", "r1:1", "green", [ "v0" ] ],
+    [ "r1:2", "esp:10", "green", [ "v0" ] ]
   ],
   "dependencies": {}
 }
