@@ -1,4 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import mqtt from 'mqtt'
+
+const brokerUrl = import.meta.env.VITE_MQTT_URL?.trim()
+const telemetryTopic = import.meta.env.VITE_MQTT_TOPIC?.trim() || 'steam-sensor/telemetry'
+const telemetryFields = [
+  'inner_temperature_f',
+  'outer_temperature_f',
+  'pressure_psi',
+  'condensation_kpa',
+]
+
+function formatReading(value, digits = 1) {
+  return typeof value === 'number' ? value.toFixed(digits) : '--'
+}
 
 function StatusLine({ icon, children }) {
   return (
@@ -9,13 +23,13 @@ function StatusLine({ icon, children }) {
   )
 }
 
-function Card({ title, status, children, className = '' }) {
+function Card({ title, status, statusTone = '', children, className = '' }) {
   return (
     <section className={`card ${className}`}>
       <div className="card-title-row">
         <h2>{title}</h2>
         {status && (
-          <span className="card-status">
+          <span className={`card-status ${statusTone}`}>
             <span className="online-dot" />
             {status}
           </span>
@@ -31,6 +45,60 @@ function App() {
   const [note, setNote] = useState('')
   const [logs, setLogs] = useState([])
   const [collecting, setCollecting] = useState(false)
+  const [mqttStatus, setMqttStatus] = useState(brokerUrl ? 'connecting' : 'not-configured')
+  const [mqttError, setMqttError] = useState('')
+  const [telemetry, setTelemetry] = useState(null)
+
+  useEffect(() => {
+    if (!brokerUrl) return undefined
+
+    const client = mqtt.connect(brokerUrl, {
+      reconnectPeriod: 2000,
+      connectTimeout: 10000,
+    })
+
+    client.on('connect', () => {
+      setMqttStatus('connected')
+      setMqttError('')
+      client.subscribe(telemetryTopic, (error) => {
+        if (error) setMqttError(`Could not subscribe to ${telemetryTopic}: ${error.message}`)
+      })
+    })
+    client.on('reconnect', () => setMqttStatus('reconnecting'))
+    client.on('close', () => setMqttStatus('disconnected'))
+    client.on('error', (error) => setMqttError(`MQTT connection error: ${error.message}`))
+    client.on('message', (topic, message) => {
+      if (topic !== telemetryTopic) return
+
+      try {
+        const payload = JSON.parse(message.toString())
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+          throw new Error('Expected a JSON object.')
+        }
+
+        const readings = Object.fromEntries(
+          telemetryFields
+            .filter((field) => Number.isFinite(payload[field]))
+            .map((field) => [field, payload[field]]),
+        )
+        if (Object.keys(readings).length === 0) {
+          throw new Error(`Expected at least one numeric field: ${telemetryFields.join(', ')}.`)
+        }
+
+        setTelemetry({
+          ...readings,
+          mode: typeof payload.mode === 'string' ? payload.mode : null,
+          systemStatus: typeof payload.system_status === 'string' ? payload.system_status : null,
+          receivedAt: Date.now(),
+        })
+        setMqttError('')
+      } catch (error) {
+        setMqttError(`Invalid telemetry on ${telemetryTopic}: ${error.message}`)
+      }
+    })
+
+    return () => client.end(true)
+  }, [])
 
   const submitNote = () => {
     const trimmedNote = note.trim()
@@ -53,11 +121,19 @@ function App() {
         <div className="dashboard-column left-column">
           <Card title="System Status">
             <div className="status-list">
-              <StatusLine icon="⌁">Wifi: Connected</StatusLine>
-              <StatusLine icon="▧">MQTT: Connected</StatusLine>
-              <StatusLine icon="▣">Mode: Manual</StatusLine>
-              <StatusLine icon="♢">Status: Idle</StatusLine>
+              <StatusLine icon="▧">MQTT: {mqttStatus.replace('-', ' ')}</StatusLine>
+              <StatusLine icon="▣">Mode: {telemetry?.mode ?? '—'}</StatusLine>
+              <StatusLine icon="♢">Status: {telemetry?.systemStatus ?? '—'}</StatusLine>
+              <StatusLine icon="◷">
+                Last update: {telemetry ? new Date(telemetry.receivedAt).toLocaleTimeString() : 'Waiting for telemetry'}
+              </StatusLine>
             </div>
+            {mqttError && <p className="connection-error" role="alert">{mqttError}</p>}
+            {!brokerUrl && (
+              <p className="connection-help">
+                Set VITE_MQTT_URL to your broker&apos;s WebSocket address to connect.
+              </p>
+            )}
           </Card>
 
           <Card title="Operator Logs" className="logs-card">
@@ -87,20 +163,30 @@ function App() {
         </div>
 
         <div className="dashboard-column center-column">
-          <Card title="Temperature" status="normal" className="temperature-card">
+          <Card
+            title="Temperature"
+            status={telemetry ? 'live' : 'waiting'}
+            statusTone={telemetry ? 'connected' : ''}
+            className="temperature-card"
+          >
             <div className="temperature-values">
-              <div><span>INNER TEMP</span><strong>XX.X °F</strong></div>
-              <div><span>OUTER TEMP</span><strong>XX.X °F</strong></div>
+              <div><span>INNER TEMP</span><strong>{formatReading(telemetry?.inner_temperature_f)} °F</strong></div>
+              <div><span>OUTER TEMP</span><strong>{formatReading(telemetry?.outer_temperature_f)} °F</strong></div>
             </div>
           </Card>
 
-          <Card title="Pressure" status="normal">
-            <div className="reading">XX.X <small>psi</small></div>
+          <Card title="Pressure" status={telemetry ? 'live' : 'waiting'} statusTone={telemetry ? 'connected' : ''}>
+            <div className="reading">{formatReading(telemetry?.pressure_psi)} <small>psi</small></div>
             <p className="limit">Safety Limit: XXX.X psi</p>
           </Card>
 
-          <Card title="Condensation" status="normal" className="condensation-card">
-            <div className="reading">XX <small>kPa</small></div>
+          <Card
+            title="Condensation"
+            status={telemetry ? 'live' : 'waiting'}
+            statusTone={telemetry ? 'connected' : ''}
+            className="condensation-card"
+          >
+            <div className="reading">{formatReading(telemetry?.condensation_kpa, 0)} <small>kPa</small></div>
             <p className="limit">Max Allowable: XXX kPa</p>
           </Card>
         </div>

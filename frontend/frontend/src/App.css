@@ -100,7 +100,26 @@
   height: 6px;
   display: inline-block;
   border-radius: 50%;
+  background: #929292;
+}
+
+.card-status.connected .online-dot {
   background: #16bc50;
+}
+
+.connection-error,
+.connection-help {
+  margin: 9px 0 0;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.connection-error {
+  color: #b42318;
+}
+
+.connection-help {
+  color: #777;
 }
 
 .status-list {
