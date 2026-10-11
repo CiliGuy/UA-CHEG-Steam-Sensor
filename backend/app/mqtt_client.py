@@ -1,3 +1,9 @@
+"""
+MQTT Ingestion & Publishing Client.
+Connects to the MQTT broker on a background thread, ingests live telemetry,
+commits records to SQLite, and publishes manual actuator commands to the ESP32.
+"""
+
 import json
 import uuid
 import paho.mqtt.client as mqtt

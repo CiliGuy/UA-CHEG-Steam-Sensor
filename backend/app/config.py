@@ -1,3 +1,9 @@
+"""
+Core Configuration Module.
+Loads and validates environment variables from .env using Pydantic Settings.
+Manages broker endpoints, port numbers, topic paths, and database URLs.
+"""
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):

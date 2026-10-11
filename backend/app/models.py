@@ -1,3 +1,9 @@
+"""
+Database Table Schemas (SQLAlchemy ORM).
+Defines the physical database tables, column types, and indexes 
+used to persist telemetry readings received from the reactor hardware.
+"""
+
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, DateTime
 from app.database import Base

@@ -1,3 +1,9 @@
+"""
+[TESTING ONLY] Hardware Simulation Harness.
+Emulates an ESP32 publishing mock telemetry and listening for valve overrides.
+Used for local testing when the physical hardware or Wokwi is unavailable.
+"""
+
 import time
 import json
 import random

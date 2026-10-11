@@ -1,3 +1,9 @@
+"""
+Database Engine & Session Management.
+Initializes the SQLite engine with multi-threading access flags and 
+provides the get_db dependency generator for route handlers.
+"""
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.config import settings

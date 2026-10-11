@@ -1,3 +1,9 @@
+"""
+REST API Route Handlers.
+Exposes HTTP GET endpoints for React historical charting and POST endpoints
+for manual actuator control. Bridges web UI requests to the database and MQTT client.
+"""
+
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session

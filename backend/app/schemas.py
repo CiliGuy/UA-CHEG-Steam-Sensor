@@ -1,3 +1,9 @@
+"""
+Data Validation & Serialization Schemas (Pydantic).
+Enforces hardware safety boundaries on incoming web commands and
+serializes database records into clean JSON responses for the React UI.
+"""
+
 from datetime import datetime
 from pydantic import BaseModel, Field
 
