@@ -27,10 +27,9 @@ A modular Python backend designed for a Chemical Reactor Cyber-Physical System (
 ## Directory Structure
 
 ```text
-reactor-cps-backend/
+backend/
 ├── .env                          # Broker host, ports, and database credentials
 ├── requirements.txt              # Project dependencies
-├── README.md                     # System documentation & setup guide
 ├── app/
 │   ├── __init__.py
 │   ├── config.py                 # Pydantic Settings (loads environment variables)
@@ -44,9 +43,8 @@ reactor-cps-backend/
 │   │   └── routes.py             # REST endpoints (telemetry & actuator overrides)
 │   └── ml/                       # [ROADMAP] Isolation Forest anomaly detection
 ├── docs/
-│   ├── test_dashboard.html       # Standalone HTML/JS browser dashboard for local testing
 │   └── frontend_reference/
-│       └── TelemetryDashboard.jsx# Sample React component showing polling & API calls
+│       └── Dashboard.jsx         # Sample React component showing polling & API calls
 └── scripts/
     └── mock_esp32.py             # CLI simulation harness for standalone testing
 ```
@@ -97,7 +95,7 @@ Upon startup, the console will verify:
 ## Testing the Pipeline
 
 ### Ingestion Testing (Pick One)
-*   **Aaron's Wokwi Simulation:** Run the C++ ESP32 project in Wokwi. As the virtual board connects to Wi-Fi, incoming readings will stream to the FastAPI console and commit to SQLite.
+*   **Wokwi Simulation:** Run the C++ ESP32 project in Wokwi. As the virtual board connects to Wi-Fi, incoming readings will stream to the FastAPI console and commit to SQLite.
 *   **Standalone Mock Script:** Open a second terminal window (with `venv` activated) and run:
     ```bash
     python scripts/mock_esp32.py
@@ -125,5 +123,4 @@ Upon startup, the console will verify:
 
 1.  **Refactor Sensor Schema:** Swap `pot_raw` and `servo_deg` for real thermocouple, pressure, and mass load cell attributes once confirmed.
 2.  **Verify Mechanical Limits:** Calibrate physical valve limits and update `SAFE_VALVE_ANGLE` in `app/api/routes.py`.
-3.  **Deploy Anomaly Detection (`app/ml/`):** Train an unsupervised **Isolation Forest** on baseline "gold standard" reactor runs to flag hardware deviations (e.g., stuck valve, thermal runaway) in real time.
-4.  **WebSocket Support:** If the frontend requires higher-frequency updates ($> 5\text{ Hz}$), migrate telemetry distribution from HTTP polling to WebSockets (`ws://localhost:8000/ws/telemetry`).
+3.  **Deploy Anomaly Detection (`app/ml/`):** Train an unsupervised **Isolation Forest** on baseline "gold standard" reactor runs to flag hardware deviations (e.g., stuck valve, thermal runaway) in real time. (?)
