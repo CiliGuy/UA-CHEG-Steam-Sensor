@@ -1,5 +1,29 @@
-// Sample React component for use of backend
-// Sample component to demonstrate how to get
+/**
+ * -----------------------------------------------------------------------------
+ * Reference React component demonstrating polling ingestion and actuator control.
+ * Connects to the FastAPI backend running on http://localhost:8000.
+ *
+ * BACKEND API CONTRACT (HTTP REST):
+ * -----------------------------------------------------------------------------
+ * 1. GET  /api/telemetry/latest
+ *    - Purpose: Fetch the most recent sensor reading for real-time displays.
+ *    - Response: { id: int, timestamp: string, pot_raw: int, servo_deg: int }
+ *
+ * 2. GET  /api/telemetry/history?limit=50
+ *    - Purpose: Fetch chronological historical points for line charts.
+ *    - Response: Array of telemetry objects [ { ... }, { ... } ]
+ *
+ * 3. POST /api/actuator/servo
+ *    - Purpose: Manually override the valve actuator to a specific angle.
+ *    - Body:    { "angle": number } (0 to 180)
+ *    - Response: { status: "success", requested_angle: number }
+ *
+ * 4. POST /api/actuator/emergency-stop
+ *    - Purpose: Immediately force the valve to its designated safe state.
+ *    - Body:    None
+ *    - Response: { status: "EMERGENCY_STOP_TRIGGERED", actuator_forced_angle: number }
+ * -----------------------------------------------------------------------------
+ */
 
 import React, { useState, useEffect } from 'react';
 
