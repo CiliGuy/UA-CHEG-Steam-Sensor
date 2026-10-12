@@ -39,3 +39,15 @@ def override_servo_angle(command: ServoCommandRequest):
             detail="Failed to publish command to MQTT broker"
         )
     return {"status": "success", "requested_angle": command.angle}
+
+# ----------------------------------------------------------------------
+# WARNING: EMERGENCY STOP ANGLE IS A PROVISIONAL PLACEHOLDER.
+# Angle 0 is currently assumed based on basic servo range conventions. # ----------------------------------------------------------------------
+@router.post("/actuator/emergency-stop")
+def trigger_emergency_stop():
+    """Immediately forces the valve actuator to safe state (PENDING VERIFICATION)."""
+    SAFE_VALVE_ANGLE = 0  # TODO: Update with confirmed physical seating angle
+    success = send_servo_command(SAFE_VALVE_ANGLE)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to transmit E-Stop to MQTT broker")
+    return {"status": "EMERGENCY_STOP_TRIGGERED", "actuator_forced_angle": SAFE_VALVE_ANGLE}
