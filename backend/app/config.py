@@ -7,6 +7,12 @@ Manages broker endpoints, port numbers, topic paths, and database URLs.
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    # ------------------------------------------------------------------
+    # MQTT BROKER SETTINGS
+    # Defaults are fallbacks to the public test broker.
+    # Production values should be supplied via the .env file once the
+    # broker is deployed on the local network.
+    # ------------------------------------------------------------------
     MQTT_BROKER: str = "broker.hivemq.com"
     MQTT_PORT: int = 1883
     TOPIC_TELEMETRY: str = "esp32/telemetry"
