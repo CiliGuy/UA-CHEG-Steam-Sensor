@@ -1,17 +1,36 @@
 import { useEffect, useState } from 'react'
-import mqtt from 'mqtt'
 
-const brokerUrl = import.meta.env.VITE_MQTT_URL?.trim()
-const telemetryTopic = import.meta.env.VITE_MQTT_TOPIC?.trim() || 'steam-sensor/telemetry'
-const telemetryFields = [
-  'inner_temperature_f',
-  'outer_temperature_f',
-  'pressure_psi',
-  'condensation_kpa',
-]
+const apiUrl = (import.meta.env.VITE_API_URL?.trim() || 'http://localhost:8000').replace(/\/+$/, '')
+const telemetryUrl = `${apiUrl}/api/telemetry/latest`
+const telemetryHistoryUrl = `${apiUrl}/api/telemetry/history?limit=10`
+const servoCommandUrl = `${apiUrl}/api/actuator/servo`
 
 function formatReading(value, digits = 1) {
   return typeof value === 'number' ? value.toFixed(digits) : '--'
+}
+
+async function readResponse(response) {
+  let body
+  try {
+    body = await response.json()
+  } catch {
+    body = {}
+  }
+
+  if (!response.ok) {
+    throw new Error(body.detail || `Request failed with status ${response.status}.`)
+  }
+  return body
+}
+
+function isTelemetryReading(reading) {
+  return (
+    reading
+    && Number.isFinite(reading.id)
+    && Number.isFinite(reading.pot_raw)
+    && Number.isFinite(reading.servo_deg)
+    && typeof reading.timestamp === 'string'
+  )
 }
 
 function StatusLine({ icon, children }) {
@@ -41,64 +60,132 @@ function Card({ title, status, statusTone = '', children, className = '' }) {
 }
 
 function App() {
-  const [actuatorPosition, setActuatorPosition] = useState(50)
+  const [servoTarget, setServoTarget] = useState(90)
   const [note, setNote] = useState('')
   const [logs, setLogs] = useState([])
-  const [collecting, setCollecting] = useState(false)
-  const [mqttStatus, setMqttStatus] = useState(brokerUrl ? 'connecting' : 'not-configured')
-  const [mqttError, setMqttError] = useState('')
+  const [apiStatus, setApiStatus] = useState('connecting')
+  const [apiError, setApiError] = useState('')
+  const [telemetryHistory, setTelemetryHistory] = useState([])
+  const [commandMessage, setCommandMessage] = useState('')
+  const [emergencyMessage, setEmergencyMessage] = useState('')
+  const [emergencyPending, setEmergencyPending] = useState(false)
   const [telemetry, setTelemetry] = useState(null)
 
   useEffect(() => {
-    if (!brokerUrl) return undefined
+    let active = true
+    let timeoutId
+    let controller
 
-    const client = mqtt.connect(brokerUrl, {
-      reconnectPeriod: 2000,
-      connectTimeout: 10000,
-    })
+    const refreshDashboard = async () => {
+      controller = new AbortController()
+      const options = { signal: controller.signal }
+      const [healthResult, latestResult, historyResult] = await Promise.allSettled([
+        fetch(apiUrl, options).then(readResponse),
+        fetch(telemetryUrl, options).then(async (response) => (
+          response.status === 404 ? null : readResponse(response)
+        )),
+        fetch(telemetryHistoryUrl, options).then(readResponse),
+      ])
 
-    client.on('connect', () => {
-      setMqttStatus('connected')
-      setMqttError('')
-      client.subscribe(telemetryTopic, (error) => {
-        if (error) setMqttError(`Could not subscribe to ${telemetryTopic}: ${error.message}`)
-      })
-    })
-    client.on('reconnect', () => setMqttStatus('reconnecting'))
-    client.on('close', () => setMqttStatus('disconnected'))
-    client.on('error', (error) => setMqttError(`MQTT connection error: ${error.message}`))
-    client.on('message', (topic, message) => {
-      if (topic !== telemetryTopic) return
+      if (active) {
+        const errors = []
 
-      try {
-        const payload = JSON.parse(message.toString())
-        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-          throw new Error('Expected a JSON object.')
+        if (
+          healthResult.status === 'fulfilled'
+          && healthResult.value.status === 'healthy'
+        ) {
+          setApiStatus('connected')
+        } else {
+          setApiStatus('disconnected')
+          errors.push(
+            healthResult.status === 'rejected'
+              ? `Health check failed: ${healthResult.reason.message}`
+              : 'Health check returned an unexpected response.',
+          )
         }
 
-        const readings = Object.fromEntries(
-          telemetryFields
-            .filter((field) => Number.isFinite(payload[field]))
-            .map((field) => [field, payload[field]]),
-        )
-        if (Object.keys(readings).length === 0) {
-          throw new Error(`Expected at least one numeric field: ${telemetryFields.join(', ')}.`)
+        if (latestResult.status === 'fulfilled') {
+          const reading = latestResult.value
+          if (reading === null) {
+            setTelemetry(null)
+          } else if (isTelemetryReading(reading)) {
+            setTelemetry(reading)
+          } else {
+            errors.push('Latest telemetry response has an unexpected format.')
+          }
+        } else {
+          errors.push(`Latest telemetry request failed: ${latestResult.reason.message}`)
         }
 
-        setTelemetry({
-          ...readings,
-          mode: typeof payload.mode === 'string' ? payload.mode : null,
-          systemStatus: typeof payload.system_status === 'string' ? payload.system_status : null,
-          receivedAt: Date.now(),
-        })
-        setMqttError('')
-      } catch (error) {
-        setMqttError(`Invalid telemetry on ${telemetryTopic}: ${error.message}`)
+        if (
+          historyResult.status === 'fulfilled'
+          && Array.isArray(historyResult.value)
+          && historyResult.value.every(isTelemetryReading)
+        ) {
+          setTelemetryHistory(historyResult.value)
+        } else {
+          errors.push(
+            historyResult.status === 'rejected'
+              ? `Telemetry history request failed: ${historyResult.reason.message}`
+              : 'Telemetry history response has an unexpected format.',
+          )
+        }
+
+        setApiError(errors.join(' '))
       }
-    })
 
-    return () => client.end(true)
+      if (active) timeoutId = setTimeout(refreshDashboard, 3000)
+    }
+
+    refreshDashboard()
+    return () => {
+      active = false
+      clearTimeout(timeoutId)
+      controller?.abort()
+    }
   }, [])
+
+  const sendServoCommand = async () => {
+    setCommandMessage('')
+    try {
+      const response = await fetch(servoCommandUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ angle: servoTarget }),
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.detail || `Request failed with status ${response.status}.`)
+      }
+      setCommandMessage(`Command sent for ${result.requested_angle}°; actuator position is not confirmed.`)
+    } catch (error) {
+      setCommandMessage(`Could not send servo command: ${error.message}`)
+    }
+  }
+
+  const sendEmergencyStop = async () => {
+    const confirmed = window.confirm(
+      'The backend currently sends the servo to 0°, which is an unverified placeholder. Proceed only if 0° is confirmed safe for your hardware.',
+    )
+    if (!confirmed) return
+
+    setEmergencyPending(true)
+    setEmergencyMessage('')
+    try {
+      const response = await fetch(`${apiUrl}/api/actuator/emergency-stop`, { method: 'POST' })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.detail || `Request failed with status ${response.status}.`)
+      }
+      setEmergencyMessage(
+        `Emergency-stop command sent (${result.actuator_forced_angle}°); actuator position is not confirmed.`,
+      )
+    } catch (error) {
+      setEmergencyMessage(`Could not send emergency-stop command: ${error.message}`)
+    } finally {
+      setEmergencyPending(false)
+    }
+  }
 
   const submitNote = () => {
     const trimmedNote = note.trim()
@@ -118,112 +205,135 @@ function App() {
       </header>
 
       <main className="dashboard">
-        <div className="dashboard-column left-column">
-          <Card title="System Status">
-            <div className="status-list">
-              <StatusLine icon="▧">MQTT: {mqttStatus.replace('-', ' ')}</StatusLine>
-              <StatusLine icon="▣">Mode: {telemetry?.mode ?? '—'}</StatusLine>
-              <StatusLine icon="♢">Status: {telemetry?.systemStatus ?? '—'}</StatusLine>
-              <StatusLine icon="◷">
-                Last update: {telemetry ? new Date(telemetry.receivedAt).toLocaleTimeString() : 'Waiting for telemetry'}
-              </StatusLine>
+        <Card title="System Status" className="status-card">
+          <div className="status-list">
+            <StatusLine icon="▣">Device: {telemetry ? 'Telemetry available' : 'Waiting for telemetry'}</StatusLine>
+            <StatusLine icon="◷">
+              Last update: {telemetry ? new Date(telemetry.timestamp).toLocaleTimeString() : 'Waiting for telemetry'}
+            </StatusLine>
+          </div>
+        </Card>
+
+        <Card title="Operator Logs" className="logs-card">
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Enter shift logs, inspection notes, or steam pressure override remarks here..."
+            aria-label="Operator log note"
+          />
+          <div className="logs-footer">
+            <span>Auto-saved: Just now</span>
+            <button className="small-button" onClick={submitNote}>Submit Note</button>
+          </div>
+          {logs.length > 0 && (
+            <div className="submitted-logs">
+              {logs.map((entry, index) => <p key={`${entry}-${index}`}>{entry}</p>)}
             </div>
-            {mqttError && <p className="connection-error" role="alert">{mqttError}</p>}
-            {!brokerUrl && (
-              <p className="connection-help">
-                Set VITE_MQTT_URL to your broker&apos;s WebSocket address to connect.
-              </p>
-            )}
-          </Card>
+          )}
+        </Card>
 
-          <Card title="Operator Logs" className="logs-card">
-            <textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="Enter shift logs, inspection notes, or steam pressure override remarks here..."
-              aria-label="Operator log note"
-            />
-            <div className="logs-footer">
-              <span>Auto-saved: Just now</span>
-              <button className="small-button" onClick={submitNote}>Submit Note</button>
+        <Card
+          title="Potentiometer Input"
+          className="reading-card"
+          status={telemetry?.pot_raw !== undefined ? 'live' : 'waiting'}
+          statusTone={telemetry?.pot_raw !== undefined ? 'connected' : ''}
+        >
+          <div className="reading">{formatReading(telemetry?.pot_raw, 0)} <small>/ 4095</small></div>
+          <p className="limit">Raw simulated analog input</p>
+        </Card>
+
+        <Card
+          title="Potentiometer Mapped Angle"
+          className="reading-card angle-card"
+          status={telemetry?.servo_deg !== undefined ? 'live' : 'waiting'}
+          statusTone={telemetry?.servo_deg !== undefined ? 'connected' : ''}
+        >
+          <div className="reading">{formatReading(telemetry?.servo_deg, 0)} <small>°</small></div>
+          <p className="limit">Angle calculated from potentiometer input</p>
+        </Card>
+
+        <Card title="Backend Health" className="health-card" status={apiStatus} statusTone={apiStatus === 'connected' ? 'connected' : ''}>
+          <p className="connection-help">Health endpoint: {apiUrl}/</p>
+          {apiError && <p className="connection-error" role="alert">{apiError}</p>}
+        </Card>
+
+        <Card title="Servo Command Target" className="actuator-card">
+          <div className="actuator-control">
+            <button aria-label="Decrease servo target" onClick={() => setServoTarget((value) => Math.max(0, value - 5))}>◀</button>
+            <div className="actuator-reading">
+              <strong>{servoTarget}°</strong>
+              <span>RANGE: 0–180°</span>
             </div>
-            {logs.length > 0 && (
-              <div className="submitted-logs">
-                {logs.map((entry, index) => <p key={`${entry}-${index}`}>{entry}</p>)}
-              </div>
-            )}
-          </Card>
-
-          <Card title="Data Collection" className="collection-card">
-            <p>Start logging temperature, pressure, and condensation readings.</p>
-            <button className="primary-button" onClick={() => setCollecting((value) => !value)}>
-              {collecting ? 'STOP DATA COLLECTION' : 'START DATA COLLECTION'}
-            </button>
-          </Card>
-        </div>
-
-        <div className="dashboard-column center-column">
-          <Card
-            title="Temperature"
-            status={telemetry ? 'live' : 'waiting'}
-            statusTone={telemetry ? 'connected' : ''}
-            className="temperature-card"
+            <button aria-label="Increase servo target" onClick={() => setServoTarget((value) => Math.min(180, value + 5))}>▶</button>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="180"
+            value={servoTarget}
+            onChange={(event) => setServoTarget(Number(event.target.value))}
+            aria-label="Servo command target"
+          />
+          <button
+            className="primary-button command-button"
+            onClick={sendServoCommand}
+            disabled={apiStatus !== 'connected'}
           >
-            <div className="temperature-values">
-              <div><span>INNER TEMP</span><strong>{formatReading(telemetry?.inner_temperature_f)} °F</strong></div>
-              <div><span>OUTER TEMP</span><strong>{formatReading(telemetry?.outer_temperature_f)} °F</strong></div>
+            SEND SERVO COMMAND
+          </button>
+          {commandMessage && (
+            <p className="command-message" role="status">
+              {commandMessage}
+            </p>
+          )}
+        </Card>
+
+        <Card title="Recent Telemetry" className="history-card">
+          {telemetryHistory.length > 0 ? (
+            <div className="history-table-wrap">
+              <table className="history-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Time</th>
+                    <th scope="col">Pot</th>
+                    <th scope="col">Angle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...telemetryHistory].reverse().map((reading) => (
+                    <tr key={reading.id}>
+                      <td>{new Date(reading.timestamp).toLocaleTimeString()}</td>
+                      <td>{reading.pot_raw}</td>
+                      <td>{reading.servo_deg}°</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </Card>
+          ) : (
+            <p className="connection-help">No telemetry history available yet.</p>
+          )}
+        </Card>
 
-          <Card title="Pressure" status={telemetry ? 'live' : 'waiting'} statusTone={telemetry ? 'connected' : ''}>
-            <div className="reading">{formatReading(telemetry?.pressure_psi)} <small>psi</small></div>
-            <p className="limit">Safety Limit: XXX.X psi</p>
-          </Card>
-
-          <Card
-            title="Condensation"
-            status={telemetry ? 'live' : 'waiting'}
-            statusTone={telemetry ? 'connected' : ''}
-            className="condensation-card"
+        <section className="emergency-card emergency-dashboard-card" aria-labelledby="emergency-title">
+          <h2 id="emergency-title">Emergency Control</h2>
+          <p>
+            The backend currently uses 0° as an unverified placeholder. Confirm this angle is safe
+            for your hardware before sending.
+          </p>
+          <button
+            className="emergency-button"
+            onClick={sendEmergencyStop}
+            disabled={apiStatus !== 'connected' || emergencyPending}
           >
-            <div className="reading">{formatReading(telemetry?.condensation_kpa, 0)} <small>kPa</small></div>
-            <p className="limit">Max Allowable: XXX kPa</p>
-          </Card>
-        </div>
-
-        <div className="dashboard-column right-column">
-          <Card title="Actuator Position Target" className="actuator-card">
-            <div className="actuator-control">
-              <button aria-label="Decrease actuator position" onClick={() => setActuatorPosition((value) => Math.max(0, value - 5))}>◀</button>
-              <div className="actuator-reading">
-                <strong>{actuatorPosition}%</strong>
-                <span>ACTUAL: XX%</span>
-              </div>
-              <button aria-label="Increase actuator position" onClick={() => setActuatorPosition((value) => Math.min(100, value + 5))}>▶</button>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={actuatorPosition}
-              onChange={(event) => setActuatorPosition(Number(event.target.value))}
-              aria-label="Actuator position target"
-            />
-          </Card>
-
-          <Card title="History" className="history-card">
-            <svg viewBox="0 0 300 115" preserveAspectRatio="none" role="img" aria-label="Sensor history">
-              <line x1="5" y1="102" x2="295" y2="102" />
-              <line x1="5" y1="10" x2="5" y2="102" />
-              <path d="M7 88 C25 72, 29 40, 52 35 C80 29, 75 85, 103 80 C132 75, 128 36, 150 30 C176 23, 168 82, 195 80 C226 78, 211 15, 240 9 C273 2, 262 85, 291 87" />
-            </svg>
-          </Card>
-
-          <section className="emergency-card">
-            <h2>Emergency Control</h2>
-            <button className="emergency-button" onClick={() => window.alert('Emergency stop requested.')}>EMERGENCY STOP</button>
-          </section>
-        </div>
+            {emergencyPending ? 'SENDING...' : 'EMERGENCY STOP'}
+          </button>
+          {emergencyMessage && (
+            <p className="command-message" role="status">
+              {emergencyMessage}
+            </p>
+          )}
+        </section>
       </main>
     </div>
   )
