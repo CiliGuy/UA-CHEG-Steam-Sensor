@@ -34,16 +34,20 @@ def on_message(client, userdata, message):
         data = json.loads(payload_str)
 
         # Ignore heartbeat status payloads like {"status": "online"}
-        if "pot_raw" in data and "servo_deg" in data:
+        if "temperature" in data and "pressure" in data and "time" in data:
             db = SessionLocal()
             try:
                 record = TelemetryRecord(
-                    pot_raw=int(data["pot_raw"]),
-                    servo_deg=int(data["servo_deg"])
+                    # pot_raw=int(data["pot_raw"]),
+                    # servo_deg=int(data["servo_deg"])
+                    temperature=float(data["temperature"]),
+                    pressure=float(data["pressure"]),
+                    time=float(data["time"])
                 )
                 db.add(record)
                 db.commit()
-                print(f"[MQTT -> DB] Saved -> Pot: {record.pot_raw} | Servo: {record.servo_deg}°")
+                # print(f"[MQTT -> DB] Saved -> Pot: {record.pot_raw} | Servo: {record.servo_deg}°")
+                print(f"[MQTT -> DB] Saved -> Temp: {record.temperature} | Pressure: {record.pressure} | Time: {record.time}")
             finally:
                 db.close()
     except Exception as e:

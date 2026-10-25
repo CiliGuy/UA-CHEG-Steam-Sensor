@@ -34,9 +34,18 @@ client.loop_start()
 print("[MOCK ESP32] Emulating hardware telemetry... Press Ctrl+C to stop.")
 try:
     while True:
-        simulated_pot = random.randint(1800, 2400)
-        simulated_servo = int((simulated_pot / 4095.0) * 180)
-        payload = json.dumps({"pot_raw": simulated_pot, "servo_deg": simulated_servo})
+        # simulated_pot = random.randint(1800, 2400)
+        # simulated_servo = int((simulated_pot / 4095.0) * 180)
+        simulated_temp = round(random.uniform(100.0, 150.0), 2)
+        simulated_pressure = round(random.uniform(20.0, 35.0), 2)
+        simulated_time = round(time.time(), 2)
+
+        # payload = json.dumps({"pot_raw": simulated_pot, "servo_deg": simulated_servo})
+        payload = json.dumps({
+            "temperature": simulated_temp, 
+            "pressure": simulated_pressure,
+            "time": simulated_time
+        })
         client.publish(TOPIC_TELEMETRY, payload)
         print(f"[MOCK ESP32] Published: {payload}")
         time.sleep(1.0)
