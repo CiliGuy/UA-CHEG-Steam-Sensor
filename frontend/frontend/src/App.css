@@ -51,7 +51,7 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-areas:
-    "status health input angle"
+    "status health temperature pressure"
     "logs logs actuator emergency"
     "history history history history";
   gap: 16px;
@@ -67,11 +67,11 @@
 }
 
 .reading-card {
-  grid-area: input;
+  grid-area: temperature;
 }
 
-.angle-card {
-  grid-area: angle;
+.pressure-card {
+  grid-area: pressure;
 }
 
 .logs-card {
@@ -393,7 +393,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
       "status health"
-      "input angle"
+      "temperature pressure"
       "logs logs"
       "actuator emergency"
       "history history";
@@ -415,8 +415,8 @@
     grid-template-areas:
       "status"
       "health"
-      "input"
-      "angle"
+      "temperature"
+      "pressure"
       "logs"
       "actuator"
       "emergency"

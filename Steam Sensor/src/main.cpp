@@ -3,16 +3,16 @@
 #include <PubSubClient.h>
 #include <ESP32Servo.h>
 
-// Pin Definitions
+// Pin Definitions (Servo moved to GPIO 15 for reliable S3 PWM simulation)
 constexpr uint8_t POT_PIN   = 4;  
-constexpr uint8_t SERVO_PIN = 18; 
+constexpr uint8_t SERVO_PIN = 15; 
 constexpr uint8_t LED_PIN   = 10; 
 
 // HiveMQ Public Broker Details
 const char* WIFI_SSID   = "Wokwi-GUEST";
 const char* WIFI_PASS   = "";
 const char* MQTT_SERVER = "broker.hivemq.com";
-const int   MQTT_PORT   = 1883; // Standard non-TLS TCP Port
+const int   MQTT_PORT   = 1883;
 
 // Topic Definitions
 const char* TOPIC_TELEMETRY = "esp32/telemetry";
@@ -25,15 +25,22 @@ Servo myservo;
 void setupWiFi() {
   Serial.print("Connecting to Wi-Fi...");
   WiFi.begin(WIFI_SSID, WIFI_PASS);
-  while (WiFi.status() != WL_CONNECTED) {
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
     Serial.print(".");
+    attempts++;
   }
-  Serial.println("\nConnected to Wi-Fi! IP: ");
-  Serial.println(WiFi.localIP());
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nConnected to Wi-Fi! IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\nWi-Fi connection failed, continuing anyway...");
+  }
 }
 
-// Callback function to receive incoming MQTT messages from HiveMQ Web Client
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String message;
   for (unsigned int i = 0; i < length; i++) {
@@ -44,7 +51,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.print("]: ");
   Serial.println(message);
 
-  // If a command is sent to esp32/cmd/servo, override the servo angle directly
   int requestedAngle = message.toInt();
   if (requestedAngle >= 0 && requestedAngle <= 180) {
     myservo.write(requestedAngle);
@@ -59,7 +65,6 @@ void reconnectMQTT() {
     lastAttempt = millis();
     Serial.print("Connecting to HiveMQ Broker... ");
     
-    // Unique Client ID is required for public brokers to avoid disconnect collisions
     String clientId = "ESP32S3-Wokwi-";
     clientId += String(random(0xffff), HEX);
 
@@ -79,11 +84,7 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   analogReadResolution(12);
 
-  ESP32PWM::allocateTimer(0);
-  ESP32PWM::allocateTimer(1);
-  ESP32PWM::allocateTimer(2);
-  ESP32PWM::allocateTimer(3);
-  
+  // Initialize servo on GPIO 15
   myservo.setPeriodHertz(50);
   myservo.attach(SERVO_PIN, 500, 2400);
 
@@ -104,6 +105,9 @@ void loop() {
   int potValue = analogRead(POT_PIN);
   int servoAngle = map(potValue, 0, 4095, 0, 180);
 
+  // Drive the physical servo in real time
+  myservo.write(servoAngle);
+
   // Control LED based on threshold
   if (potValue > 2047) {
     digitalWrite(LED_PIN, HIGH);
@@ -115,17 +119,21 @@ void loop() {
   static unsigned long lastPub = 0;
   if (millis() - lastPub > 1000) {
     lastPub = millis();
-    
+
+    unsigned long elapsed_time = millis() / 1000;
+
     char payload[100];
-    snprintf(payload, sizeof(payload), "{\"pot_raw\":%d,\"servo_deg\":%d}", potValue, servoAngle);
+    snprintf(payload, sizeof(payload), "{\"time\":%lu,\"temperature\":%d,\"pressure\":%d}", elapsed_time, potValue, servoAngle);
     
     if (mqttClient.connected()) {
       mqttClient.publish(TOPIC_TELEMETRY, payload);
     }
-
-    Serial.print("POT RAW: ");
+    
+    Serial.print("Time (seconds): ");
+    Serial.print(elapsed_time);
+    Serial.print(" | Set Temperature: ");
     Serial.print(potValue);
-    Serial.print(" | Servo Angle: ");
+    Serial.print(" | Pressure Valve: ");
     Serial.println(servoAngle);
   }
 

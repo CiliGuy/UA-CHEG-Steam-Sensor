@@ -13,8 +13,11 @@ class ServoCommandRequest(BaseModel):
 class TelemetryResponse(BaseModel):
     id: int
     timestamp: datetime
-    pot_raw: int
-    servo_deg: int
+    # pot_raw: int
+    # servo_deg: int
+    temperature: float
+    pressure: float
+    time: float
 
     class Config:
         from_attributes = True

@@ -9,6 +9,10 @@ function formatReading(value, digits = 1) {
   return typeof value === 'number' ? value.toFixed(digits) : '--'
 }
 
+function formatDeviceTime(value) {
+  return Number.isFinite(value) ? new Date(value * 1000).toLocaleTimeString() : '--'
+}
+
 async function readResponse(response) {
   let body
   try {
@@ -27,8 +31,9 @@ function isTelemetryReading(reading) {
   return (
     reading
     && Number.isFinite(reading.id)
-    && Number.isFinite(reading.pot_raw)
-    && Number.isFinite(reading.servo_deg)
+    && Number.isFinite(reading.temperature)
+    && Number.isFinite(reading.pressure)
+    && Number.isFinite(reading.time)
     && typeof reading.timestamp === 'string'
   )
 }
@@ -211,6 +216,9 @@ function App() {
             <StatusLine icon="◷">
               Last update: {telemetry ? new Date(telemetry.timestamp).toLocaleTimeString() : 'Waiting for telemetry'}
             </StatusLine>
+            <StatusLine icon="◷">
+              Device time: {telemetry ? formatDeviceTime(telemetry.time) : 'Waiting for telemetry'}
+            </StatusLine>
           </div>
         </Card>
 
@@ -233,23 +241,23 @@ function App() {
         </Card>
 
         <Card
-          title="Potentiometer Input"
+          title="Temperature"
           className="reading-card"
-          status={telemetry?.pot_raw !== undefined ? 'live' : 'waiting'}
-          statusTone={telemetry?.pot_raw !== undefined ? 'connected' : ''}
+          status={telemetry ? 'live' : 'waiting'}
+          statusTone={telemetry ? 'connected' : ''}
         >
-          <div className="reading">{formatReading(telemetry?.pot_raw, 0)} <small>/ 4095</small></div>
-          <p className="limit">Raw simulated analog input</p>
+          <div className="reading">{formatReading(telemetry?.temperature, 2)}</div>
+          <p className="limit">Latest sensor reading</p>
         </Card>
 
         <Card
-          title="Potentiometer Mapped Angle"
-          className="reading-card angle-card"
-          status={telemetry?.servo_deg !== undefined ? 'live' : 'waiting'}
-          statusTone={telemetry?.servo_deg !== undefined ? 'connected' : ''}
+          title="Pressure"
+          className="reading-card pressure-card"
+          status={telemetry ? 'live' : 'waiting'}
+          statusTone={telemetry ? 'connected' : ''}
         >
-          <div className="reading">{formatReading(telemetry?.servo_deg, 0)} <small>°</small></div>
-          <p className="limit">Angle calculated from potentiometer input</p>
+          <div className="reading">{formatReading(telemetry?.pressure, 2)}</div>
+          <p className="limit">Latest sensor reading</p>
         </Card>
 
         <Card title="Backend Health" className="health-card" status={apiStatus} statusTone={apiStatus === 'connected' ? 'connected' : ''}>
@@ -294,17 +302,19 @@ function App() {
               <table className="history-table">
                 <thead>
                   <tr>
-                    <th scope="col">Time</th>
-                    <th scope="col">Pot</th>
-                    <th scope="col">Angle</th>
+                    <th scope="col">Recorded</th>
+                    <th scope="col">Temperature</th>
+                    <th scope="col">Pressure</th>
+                    <th scope="col">Device time</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[...telemetryHistory].reverse().map((reading) => (
                     <tr key={reading.id}>
                       <td>{new Date(reading.timestamp).toLocaleTimeString()}</td>
-                      <td>{reading.pot_raw}</td>
-                      <td>{reading.servo_deg}°</td>
+                      <td>{formatReading(reading.temperature, 2)}</td>
+                      <td>{formatReading(reading.pressure, 2)}</td>
+                      <td>{formatDeviceTime(reading.time)}</td>
                     </tr>
                   ))}
                 </tbody>

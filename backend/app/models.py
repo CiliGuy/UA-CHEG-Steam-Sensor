@@ -5,7 +5,7 @@ used to persist telemetry readings received from the reactor hardware.
 """
 
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, DateTime
+from sqlalchemy import Column, Float, Integer, DateTime
 from app.database import Base
 
 class TelemetryRecord(Base):
@@ -13,5 +13,10 @@ class TelemetryRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
-    pot_raw = Column(Integer, nullable=False)
-    servo_deg = Column(Integer, nullable=False)
+    
+    # pot_raw = Column(Integer, nullable=False)
+    # servo_deg = Column(Integer, nullable=False)
+
+    temperature = Column(Float, nullable=False)
+    pressure = Column(Float, nullable=False)
+    time = Column(Float, nullable=False)
